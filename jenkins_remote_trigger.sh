@@ -30,6 +30,7 @@ Usage:
     -p JOBPARAM | --jobparam=environment=uat&test=1 Jenkins job paramiters
     -q          | --quiet                           Don't output any status messages
     -t TIMEOUT  | --timeout=TIMEOUT                 Timeout in minutes, zero for no timeout
+    -k          | --skipvalidation                  Skip SSL/TLS validation
 USAGE
     exit 1
 }
@@ -40,6 +41,10 @@ do
     case "$1" in
         -q | --quiet)
         QUIET=1
+        shift 1
+        ;;
+        -k | --skipvalidation)
+        SKIPVALIDATION=1
         shift 1
         ;;
         -h)
@@ -102,23 +107,38 @@ if [ $QUIET -eq 0 ];then
     info "Making request to trigger $JOBNAME job."
 fi
 
-TMP=`curl -s -D - -X POST "$TRIGGERURL"`
+if [ $SKIPVALIDATION -eq 0 ];then
+    TMP=`curl -s -D - -X POST "$TRIGGERURL"`
+else
+    TMP=`curl -k -s -D - -X POST "$TRIGGERURL"`
+fi
 QID=`echo "$TMP" | grep Location | cut -d "/" -f 6`
 
 QUEUE_URL="${HOST}/queue/item/${QID}/api/json?pretty=true"
 
 sleep 1
 
-while curl -v $QUEUE_URL 2>&1 | egrep -q "BlockedItem|WaitingItem";   
-do
-    if [ $QUIET -eq 0 ];then
-        info "Waiting for queued job to start.."
-    fi
-    sleep 5
-done
-
-JOBID=$(curl -s "$QUEUE_URL" | jq --raw-output '.executable.number')
-JOBURL=$(curl -s "$QUEUE_URL" | jq --raw-output '.executable.url')
+if [ $SKIPVALIDATION -eq 0 ];then
+    while curl -v $QUEUE_URL 2>&1 | egrep -q "BlockedItem|WaitingItem";   
+    do
+        if [ $QUIET -eq 0 ];then
+            info "Waiting for queued job to start.."
+        fi
+        sleep 5
+    done
+    JOBID=$(curl -s "$QUEUE_URL" | jq --raw-output '.executable.number')
+    JOBURL=$(curl -s "$QUEUE_URL" | jq --raw-output '.executable.url')
+else 
+    while curl -k -v $QUEUE_URL 2>&1 | egrep -q "BlockedItem|WaitingItem";   
+    do
+        if [ $QUIET -eq 0 ];then
+            info "Waiting for queued job to start.."
+        fi
+        sleep 5
+    done
+    JOBID=$(curl -k -s "$QUEUE_URL" | jq --raw-output '.executable.number')
+    JOBURL=$(curl -k -s "$QUEUE_URL" | jq --raw-output '.executable.url')
+fi
 
 if [ -z "$JOBID" ];
 then
@@ -138,20 +158,36 @@ STATUS=""
 while [ "$STATUS" != 200 ]
 do
   sleep 1
-  STATUS=`curl -s -o /dev/null -w "%{http_code}" "${JOBURL}"consoleText`
+  if [ $SKIPVALIDATION -eq 0 ];then
+    STATUS=`curl -s -o /dev/null -w "%{http_code}" "${JOBURL}"consoleText`
+  else 
+      STATUS=`curl -k -s -o /dev/null -w "%{http_code}" "${JOBURL}"consoleText`
+  fi
 done
 
 JOBURLJSON="$JOBURL"api/json?pretty=true
-BUILDING=$(curl -s "$JOBURLJSON" |jq --raw-output '.building')
-while $BUILDING; do
+if [ $SKIPVALIDATION -eq 0 ];then
     BUILDING=$(curl -s "$JOBURLJSON" |jq --raw-output '.building')
+else 
+    BUILDING=$(curl -k -s "$JOBURLJSON" |jq --raw-output '.building')
+fi
+while $BUILDING; do
+    if [ $SKIPVALIDATION -eq 0 ];then
+        BUILDING=$(curl -s "$JOBURLJSON" |jq --raw-output '.building')
+    else
+        BUILDING=$(curl -k -s "$JOBURLJSON" |jq --raw-output '.building')
+    fi
     if [ $QUIET -eq 0 ];then
         info "Building.."
     fi
     sleep 10
 done
 
-JOBSTATUS=$(curl -s "$JOBURLJSON" |jq --raw-output '.result')
+if [ $SKIPVALIDATION -eq 0 ];then
+    JOBSTATUS=$(curl -s "$JOBURLJSON" |jq --raw-output '.result')
+else 
+    JOBSTATUS=$(curl -k -s "$JOBURLJSON" |jq --raw-output '.result')
+fi
 
 if [ $QUIET -eq 0 ];then
     NOTIFY=error
