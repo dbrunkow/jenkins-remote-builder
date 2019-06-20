@@ -19,7 +19,7 @@
 
     -h HOST     | --host=HOST                       Jenkins host
     -j JOBNAME  | --jobname=test-build-job          The name of the jenkins job to trigger
-    -p JOBPARAM | --jobparam=environment=uat&test=1 Jenkins job paramiters
+    -p JOBPARAM | --jobparam=environment=uat&test=1 Jenkins job parameters
     -q          | --quiet                           Don't output any status messages
 
 
